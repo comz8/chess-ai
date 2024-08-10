@@ -31,7 +31,18 @@ def draw_board():
             else:
                 pygame.draw.rect(screen, BROWN, (LEFT_MARGIN + col * SQUARE_SIZE, row * SQUARE_SIZE, SQUARE_SIZE, SQUARE_SIZE))
 
-        row_text = font.render(row + 1, True, FONT_COLOR)
+    for i in range(8):
+        row_text = font.render(str(i + 1), True, FONT_COLOR)
+        row_text_rect = row_text.get_rect(center = (10, (i + 0.5) * SQUARE_SIZE))
+
+        col_text = font.render(chr(i + 65), True, FONT_COLOR)
+        col_text_rect = row_text.get_rect(center = ((i + 0.5) * SQUARE_SIZE + LEFT_MARGIN, HEIGHT - (BOTTOM_MARGIN // 2)))
+
+        screen.blit(row_text, row_text_rect)
+        screen.blit(col_text, col_text_rect)
+
+
+            
 
 def main():
     running = True
