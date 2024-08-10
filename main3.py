@@ -1,8 +1,10 @@
 import pygame
 import sys
 
+
 # Pygame 초기화
 pygame.init()
+
 
 # 색상 정의
 WHITE = (255, 255, 255)
@@ -25,25 +27,41 @@ TILE_SIZE = WIDTH // 8
 
 
 # 말 크기 비율 설정
-PIECE_SCALE = 0.7  # 타일 크기의 70%
+PIECE_SCALE = 1  # 타일 크기의 70%
 
-# 윈도우 설정 (크기 조절 가능)
+
 screen = pygame.display.set_mode((WIDTH + LEFT_MARGIN, HEIGHT + BOTTOM_MARGIN))
 pygame.display.set_caption("Chess Board")
 
 # 폰트 설정
 font = pygame.font.Font('Font/Maplelight.ttf', 15)
 
-# 체스 말 이미지 로드
-pieces = {
-    'K': pygame.image.load('blackking.png'),
-    'Q': pygame.image.load('blackqueen.png'),
-    'R': pygame.image.load('blackrook.png'),
-    'B': pygame.image.load('blackbishop.png'),
-    'N': pygame.image.load('blackknight.png'),
-    'P': pygame.image.load('blackpawn.png'),
-}
+CHESS_HORSE_PIXELS = 80
+PIECE_PATH = 'img/pieces.png'
 
+pieces = {}
+
+def load_image():
+    global pieces
+
+    name = ['k', 'q', 'b', 'n', 'r', 'p']
+
+    for i in range(2):
+        for j in range(6):
+            img_horse = pygame.image.load(PIECE_PATH)
+            img_horse = pygame.transform.scale(img_horse, (CHESS_HORSE_PIXELS * 6,CHESS_HORSE_PIXELS * 2))
+            cropped_region = (j * CHESS_HORSE_PIXELS, i * CHESS_HORSE_PIXELS, CHESS_HORSE_PIXELS, CHESS_HORSE_PIXELS)
+            cropped = pygame.Surface((CHESS_HORSE_PIXELS, CHESS_HORSE_PIXELS), pygame.SRCALPHA)
+            cropped.blit(img_horse, (0,0), cropped_region)
+
+            if i == 0:
+                pieces[name[j]] = cropped #white는 소문자
+            
+            else:
+                pieces[chr(ord(name[j]) - 32)] = cropped #black
+
+load_image()
+print(pieces)
 
 # 이미지 크기를 타일 크기보다 작게 조정
 def resize_pieces():
@@ -54,10 +72,10 @@ def resize_pieces():
 
 resize_pieces()
 
-# 체스 말 배치 (2D 배열로 표현)
+# 소문자는 white
 board = [
-    ['R', 'N', 'B', 'Q', 'K', 'B', 'N', 'R'],
-    ['P', 'P', 'P', 'P', 'P', 'P', 'P', 'P'],
+    ['r', 'n', 'b', 'q', 'k', 'b', 'n', 'r'],
+    ['p', 'p', 'p', 'p', 'p', 'p', 'p', 'p'],
     ['', '', '', '', '', '', '', ''],
     ['', '', '', '', '', '', '', ''],
     ['', '', '', '', '', '', '', ''],
@@ -100,7 +118,7 @@ def draw_pieces(screen):
 
 # 메인 루프
 def main():
-    global TILE_SIZE, BOARD_SIZE, screen, dragging_piece, dragging_pos, start_pos  # global 선언을 함수의 시작부분에 배치
+    global TILE_SIZE, BOARD_SIZE, screen, dragging_piece, dragging_pos, start_pos
 
     while True:
         for event in pygame.event.get():
