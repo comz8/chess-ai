@@ -49,8 +49,8 @@ def draw_board():
 
 
 
-def draw_piece():
-    for 
+# def draw_piece():
+#     for 
 
             
 
