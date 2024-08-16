@@ -27,7 +27,7 @@ TILE_SIZE = WIDTH // 8
 
 
 # 말 크기 비율 설정
-PIECE_SCALE = 1  # 타일 크기의 70%
+PIECE_SCALE = 1
 
 
 screen = pygame.display.set_mode((WIDTH + LEFT_MARGIN, HEIGHT + BOTTOM_MARGIN))
