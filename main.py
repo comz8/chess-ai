@@ -7,17 +7,22 @@ pygame.init()
 
 # 상수 정의
 LEFT_MARGIN = 20
-BOTTOM_MARGIN = 20
+BOTTOM_MARGIN = 15
 
-WIDTH, HEIGHT = 720, 720
+WIDTH, HEIGHT = 720, 700 + BOTTOM_MARGIN
 SQUARE_SIZE = (WIDTH - LEFT_MARGIN) // 8
 BROWN = (181, 136, 99)
 W_BROWN = (237, 214, 178)
 BACKGROUND = (49, 46, 43)
 FONT_COLOR = (145, 144, 142)
 
+PIECE_SIZE = 120
+PIECE_LEFT_MARGIN = 10
+PIECE_UPPER_MARGIN = 10
+PIECE_MIDDLE_MARGIN = 20
 
-font = pygame.font.SysFont("arial", 15)
+
+font = pygame.font.Font("font/Maplelight.ttf", 15)
 
 # 화면 설정
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
@@ -31,16 +36,21 @@ def draw_board():
             else:
                 pygame.draw.rect(screen, BROWN, (LEFT_MARGIN + col * SQUARE_SIZE, row * SQUARE_SIZE, SQUARE_SIZE, SQUARE_SIZE))
 
+
     for i in range(8):
         row_text = font.render(str(i + 1), True, FONT_COLOR)
         row_text_rect = row_text.get_rect(center = (10, (i + 0.5) * SQUARE_SIZE))
 
         col_text = font.render(chr(i + 65), True, FONT_COLOR)
-        col_text_rect = row_text.get_rect(center = ((i + 0.5) * SQUARE_SIZE + LEFT_MARGIN, HEIGHT - (BOTTOM_MARGIN // 2)))
+        col_text_rect = row_text.get_rect(center = ((i + 0.5) * SQUARE_SIZE + LEFT_MARGIN, HEIGHT - (BOTTOM_MARGIN // 2) - 2))
 
         screen.blit(row_text, row_text_rect)
         screen.blit(col_text, col_text_rect)
 
+
+
+# def draw_piece():
+#     for 
 
             
 
@@ -56,6 +66,7 @@ def main():
         pygame.display.flip()
 
     pygame.quit()
+
 
 if __name__ == "__main__":
     main()

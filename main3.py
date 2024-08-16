@@ -1,38 +1,67 @@
 import pygame
 import sys
 
+
 # Pygame 초기화
 pygame.init()
+
 
 # 색상 정의
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
-GRAY = (128, 128, 128)
+
+BROWN = (181, 136, 99)
+W_BROWN = (237, 214, 178)
+BACKGROUND = (49, 46, 43)
+
+FONT_COLOR = (160, 160, 160)
+
+
 
 # 기본 체스판 타일 크기 및 윈도우 크기 설정
-TILE_SIZE = 80
-BOARD_SIZE = TILE_SIZE * 8
-MARGIN = 50  # 행과 열 이름을 표시할 여유 공간
+LEFT_MARGIN = 20
+BOTTOM_MARGIN = 15
+
+WIDTH, HEIGHT = 700, 700
+TILE_SIZE = WIDTH // 8
+
 
 # 말 크기 비율 설정
-PIECE_SCALE = 0.7  # 타일 크기의 70%
+PIECE_SCALE = 1
 
-# 윈도우 설정 (크기 조절 가능)
-screen = pygame.display.set_mode((BOARD_SIZE + MARGIN, BOARD_SIZE + MARGIN), pygame.RESIZABLE)
+
+screen = pygame.display.set_mode((WIDTH + LEFT_MARGIN, HEIGHT + BOTTOM_MARGIN))
 pygame.display.set_caption("Chess Board")
 
 # 폰트 설정
-font = pygame.font.SysFont('Arial', 24)
+font = pygame.font.Font('Font/Maplelight.ttf', 15)
 
-# 체스 말 이미지 로드
-pieces = {
-    'K': pygame.image.load('blackking.png'),
-    'Q': pygame.image.load('blackqueen.png'),
-    'R': pygame.image.load('blackrook.png'),
-    'B': pygame.image.load('blackbishop.png'),
-    'N': pygame.image.load('blackknight.png'),
-    'P': pygame.image.load('blackpawn.png'),
-}
+CHESS_HORSE_PIXELS = 80
+PIECE_PATH = 'img/pieces.png'
+
+pieces = {}
+
+def load_image():
+    global pieces
+
+    name = ['k', 'q', 'b', 'n', 'r', 'p']
+
+    for i in range(2):
+        for j in range(6):
+            img_horse = pygame.image.load(PIECE_PATH)
+            img_horse = pygame.transform.scale(img_horse, (CHESS_HORSE_PIXELS * 6,CHESS_HORSE_PIXELS * 2))
+            cropped_region = (j * CHESS_HORSE_PIXELS, i * CHESS_HORSE_PIXELS, CHESS_HORSE_PIXELS, CHESS_HORSE_PIXELS)
+            cropped = pygame.Surface((CHESS_HORSE_PIXELS, CHESS_HORSE_PIXELS), pygame.SRCALPHA)
+            cropped.blit(img_horse, (0,0), cropped_region)
+
+            if i == 0:
+                pieces[name[j]] = cropped #white는 소문자
+            
+            else:
+                pieces[chr(ord(name[j]) - 32)] = cropped #black
+
+load_image()
+print(pieces)
 
 # 이미지 크기를 타일 크기보다 작게 조정
 def resize_pieces():
@@ -40,12 +69,13 @@ def resize_pieces():
         new_size = int(TILE_SIZE * PIECE_SCALE)
         pieces[key] = pygame.transform.scale(pieces[key], (new_size, new_size))
 
+
 resize_pieces()
 
-# 체스 말 배치 (2D 배열로 표현)
+# 소문자는 white
 board = [
-    ['R', 'N', 'B', 'Q', 'K', 'B', 'N', 'R'],
-    ['P', 'P', 'P', 'P', 'P', 'P', 'P', 'P'],
+    ['r', 'n', 'b', 'q', 'k', 'b', 'n', 'r'],
+    ['p', 'p', 'p', 'p', 'p', 'p', 'p', 'p'],
     ['', '', '', '', '', '', '', ''],
     ['', '', '', '', '', '', '', ''],
     ['', '', '', '', '', '', '', ''],
@@ -61,23 +91,22 @@ start_pos = (0, 0)
 
 # 체스판 그리기 함수
 def draw_board(screen):
-    colors = [WHITE, GRAY]
+    colors = [W_BROWN, BROWN]
+
     for row in range(8):
         for col in range(8):
             color = colors[(row + col) % 2]
-            pygame.draw.rect(screen, color, pygame.Rect(col * TILE_SIZE + MARGIN, row * TILE_SIZE, TILE_SIZE, TILE_SIZE))
+            pygame.draw.rect(screen, color, ((col * TILE_SIZE) + LEFT_MARGIN, (row * TILE_SIZE), TILE_SIZE, TILE_SIZE))
 
-    # 행과 열 이름 그리기
+
     for i in range(8):
-        # 열 이름 (A-H) - 체스판 아래쪽에 표시
-        col_text = font.render(chr(ord('A') + i), True, BLACK)
-        screen.blit(col_text, (i * TILE_SIZE + MARGIN + TILE_SIZE // 2 - col_text.get_width() // 2, BOARD_SIZE))
+        col_text = font.render(chr(ord('A') + i), True, FONT_COLOR)
+        screen.blit(col_text, ((i * TILE_SIZE) + LEFT_MARGIN + TILE_SIZE // 2 - col_text.get_width() // 2, WIDTH - 3))
 
-        # 행 이름 (1-8) - 체스판 왼쪽에 표시
-        row_text = font.render(str(8 - i), True, BLACK)
-        screen.blit(row_text, (MARGIN // 2 - row_text.get_width() // 2, i * TILE_SIZE + TILE_SIZE // 2 - row_text.get_height() // 2))
+        row_text = font.render(str(8 - i), True, FONT_COLOR)
+        screen.blit(row_text, (LEFT_MARGIN // 2 - row_text.get_width() // 2, i * TILE_SIZE + TILE_SIZE // 2 - row_text.get_height() // 2))
 
-# 체스 말 그리기 함수
+
 def draw_pieces(screen):
     for row in range(8):
         for col in range(8):
@@ -85,11 +114,11 @@ def draw_pieces(screen):
             if piece:
                 new_size = int(TILE_SIZE * PIECE_SCALE)
                 offset = (TILE_SIZE - new_size) // 2
-                screen.blit(pieces[piece], (col * TILE_SIZE + MARGIN + offset, row * TILE_SIZE + offset))
+                screen.blit(pieces[piece], (col * TILE_SIZE + LEFT_MARGIN + offset, row * TILE_SIZE + offset))
 
 # 메인 루프
 def main():
-    global TILE_SIZE, BOARD_SIZE, screen, dragging_piece, dragging_pos, start_pos  # global 선언을 함수의 시작부분에 배치
+    global TILE_SIZE, BOARD_SIZE, screen, dragging_piece, dragging_pos, start_pos
 
     while True:
         for event in pygame.event.get():
@@ -99,20 +128,20 @@ def main():
 
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 x, y = event.pos
-                col = (x - MARGIN) // TILE_SIZE
+                col = (x - LEFT_MARGIN) // TILE_SIZE
                 row = y // TILE_SIZE
 
                 if 0 <= col < 8 and 0 <= row < 8:
                     dragging_piece = board[row][col]
                     if dragging_piece:
-                        dragging_pos = (x - MARGIN, y)
+                        dragging_pos = (x - LEFT_MARGIN, y)
                         start_pos = (row, col)
                         board[row][col] = ''  # 원래 위치를 비웁니다.
 
             elif event.type == pygame.MOUSEBUTTONUP:
                 if dragging_piece:
                     x, y = event.pos
-                    col = (x - MARGIN) // TILE_SIZE
+                    col = (x - LEFT_MARGIN) // TILE_SIZE
                     row = y // TILE_SIZE
 
                     if 0 <= col < 8 and 0 <= row < 8:
@@ -134,22 +163,19 @@ def main():
                 # 윈도우 크기에 맞게 말 크기 조정
                 resize_pieces()
 
-        # 배경 지우기
-        screen.fill(WHITE)
 
-        # 체스판 그리기
+        screen.fill(BACKGROUND)
         draw_board(screen)
-
-        # 체스 말 그리기
         draw_pieces(screen)
 
-        # 드래그 중인 말 그리기
         if dragging_piece:
             new_size = int(TILE_SIZE * PIECE_SCALE)
             screen.blit(pieces[dragging_piece], (dragging_pos[0] - new_size // 2, dragging_pos[1] - new_size // 2))
 
         # 화면 업데이트
         pygame.display.flip()
+
+
 
 if __name__ == "__main__":
     main()
