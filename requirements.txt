@@ -1,0 +1,4 @@
+pygame==2.6.0
+python-chess
+numpy
+tensorflow==2.17.0
