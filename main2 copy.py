@@ -12,6 +12,7 @@ W_BROWN = (237, 214, 178)
 BACKGROUND = (49, 46, 43)
 FONT_COLOR = (160, 160, 160)
 HIGHLIGHT_COLOR = (0, 255, 0)  # 가능한 움직임 하이라이트 색상
+MOVE_DOT_COLOR = (0, 255, 0)  # 이동 가능한 위치 색상
 
 # 기본 체스판 타일 크기 및 윈도우 크기 설정
 LEFT_MARGIN = 20
@@ -25,6 +26,9 @@ CAPTURED_TILE_SIZE = 50  # 잡힌 기물 타일 크기
 
 # 추가된 변수
 captured_pieces = {'white': [], 'black': []}  # 잡힌 기물 저장
+selected_piece = None  # 선택된 기물 위치
+possible_moves = []  # 이동 가능한 위치 목록
+turn = 'white'  # 턴을 추적
 
 screen = pygame.display.set_mode((WIDTH + CAPTURED_AREA_WIDTH, HEIGHT + BOTTOM_MARGIN), pygame.RESIZABLE)  # 오른쪽에 공간 추가
 pygame.display.set_caption("Chess Board")
@@ -112,17 +116,21 @@ def draw_pieces(screen):
 
 def draw_captured_pieces(screen):
     x_start = WIDTH + LEFT_MARGIN
-    y_start_white = 20
-    y_start_black = 20
+    y_start = 20
 
-    for piece in captured_pieces['white']:
-        screen.blit(piece, (x_start, y_start_white))
-        y_start_white += CAPTURED_TILE_SIZE
+    for color, piece_list in captured_pieces.items():
+        for piece in piece_list:
+            screen.blit(piece, (x_start, y_start))
+            y_start += CAPTURED_TILE_SIZE
+        x_start += CAPTURED_TILE_SIZE + 10  # 흑과 백 기물을 구분하기 위한 간격
 
-    y_start_black = y_start_white  # Start black pieces where white pieces ended
-    for piece in captured_pieces['black']:
-        screen.blit(piece, (x_start + CAPTURED_TILE_SIZE + 10, y_start_black))  # Slightly offset to avoid overlap
-        y_start_black += CAPTURED_TILE_SIZE
+def draw_highlight(screen, selected_piece, possible_moves):
+    if selected_piece:
+        x, y = selected_piece
+        pygame.draw.rect(screen, HIGHLIGHT_COLOR, (x * TILE_SIZE + LEFT_MARGIN, y * TILE_SIZE, TILE_SIZE, TILE_SIZE), 3)
+    for move in possible_moves:
+        mx, my = move
+        pygame.draw.circle(screen, MOVE_DOT_COLOR, (mx * TILE_SIZE + LEFT_MARGIN + TILE_SIZE // 2, my * TILE_SIZE + TILE_SIZE // 2), 5)
 
 def is_valid_move(start, end, piece):
     # Add your move validation logic here (like check for piece-specific moves)
@@ -242,6 +250,7 @@ def main():
         draw_board(screen)
         draw_pieces(screen)
         draw_captured_pieces(screen)
+        draw_highlight(screen, selected_piece, possible_moves)  # 선택된 기물과 가능한 이동 경로 하이라이트
         pygame.display.flip()
         clock.tick(60)
 
