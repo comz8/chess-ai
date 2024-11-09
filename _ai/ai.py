@@ -118,7 +118,7 @@ def backpropagate(node, result):
 def train_step(policy_net, optimizer, board_state, policy, reward):
     board_tensor = fen_to_tensor(board_state)
 
-    pred_policy, pred_value = policy_net(board_tensor.float())
+    pred_policy, pred_value = policy_net(board_tensor)
     value_loss = nn.MSELoss()(pred_value, torch.tensor([reward]).float())
     policy_loss = -(policy * pred_policy.log()).mean()
     loss = value_loss + policy_loss
@@ -150,21 +150,25 @@ def main():
         while not board.is_game_over():
             print('f', end="")
             selected_node = select(root)
+
             if not selected_node.board.is_game_over():
                 selected_node = expand(selected_node, policy_net)
-            
+
+            # 시뮬레이션을 통해 보드의 결과를 가져옵니다.
             reward = simulate(selected_node.board)
             backpropagate(selected_node, reward)
 
             # 모델 학습
-            board_state = selected_node.board.board_fen()
-            board_tensor = fen_to_tensor(board_state)
+            board_state = selected_node.board.fen()  # FEN 문자열로 가져옵니다.
+            board_tensor = fen_to_tensor(board_state)  # FEN 문자열을 텐서로 변환
 
-            policy, _ = policy_net(board_tensor.float())
-            train_step(policy_net, optimizer, board_state, policy, reward)
+            # 정책 네트워크에 전달
+            policy, _ = policy_net(board_tensor)  # board_tensor를 직접 사용
+            train_step(policy_net, optimizer, board_tensor, policy, reward)  # board_tensor을 전달
 
         save_model(policy_net, path=f"chess_ai_{episode}.pth")
         print(f"모델 저장 완료: chess_ai_{episode}.pth")
+
 
 
 if __name__ == "__main__":
