@@ -4,16 +4,9 @@ import random
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import numpy as np
 from math import sqrt, log
 import os
-import multiprocessing
-import re
-
-
-BEST_REWARD = float("-inf")
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(device)
-
 
 
 # 체스 정책 및 가치 네트워크 정의
@@ -55,6 +48,7 @@ class TreeNode:
         self.visits += 1
         self.wins += result
 
+
 def fen_to_tensor(fen):
     board = chess.Board(fen)
     board_array = []
@@ -70,6 +64,7 @@ def fen_to_tensor(fen):
     
     return torch.tensor(board_array, dtype=torch.float32)
 
+
 # MCTS의 선택, 확장, 시뮬레이션, 역전파 단계 정의
 def select(node):
     while not node.board.is_game_over() and node.is_fully_expanded():
@@ -82,7 +77,7 @@ def expand(node, policy_net):
     new_board = node.board.copy()
     new_board.push(move)
     
-    board_tensor = fen_to_tensor(new_board.board_fen()).to(device)
+    board_tensor = fen_to_tensor(new_board.board_fen())
 
     policy, _ = policy_net(board_tensor)
     policy = torch.softmax(policy, dim=0)
@@ -117,12 +112,14 @@ def backpropagate(node, result):
         result = -result  # 상대 입장에서의 결과
         node = node.parent
 
+
+
 # 모델 학습 단계 정의
 def train_step(policy_net, optimizer, board_state, policy, reward):
-    board_tensor = fen_to_tensor(board_state).to(device)
+    board_tensor = fen_to_tensor(board_state)
 
     pred_policy, pred_value = policy_net(board_tensor)
-    value_loss = nn.MSELoss()(pred_value, torch.tensor([reward]).float().to(device))
+    value_loss = nn.MSELoss()(pred_value, torch.tensor([reward]).float())
     policy_loss = -(policy * pred_policy.log()).mean()
     loss = value_loss + policy_loss
 
@@ -138,102 +135,53 @@ def load_model(model, path="chess_ai.pth"):
     if os.path.exists(path):
         model.load_state_dict(torch.load(path))
 
-# 게임 실행 함수
-def run_game():
-    global BEST_REWARD
-
-    policy_net = ChessNet().to(device)  # 각 프로세스에서 별도의 모델 인스턴스 생성
-    optimizer = optim.Adam(policy_net.parameters(), lr=0.001)
-    load_model(policy_net, "chess_ai.pth")
-    
-    #print(f"Running episode {episode}")
-    board = chess.Board()
-    root = TreeNode(board)
-    total_reward = 0
-
-    while not board.is_game_over():
-        selected_node = select(root)
-
-        if not selected_node.board.is_game_over():
-            selected_node = expand(selected_node, policy_net)
-
-        # 시뮬레이션을 통해 보드의 결과를 가져옵니다.
-        reward = simulate(selected_node.board)
-        backpropagate(selected_node, reward)
-
-        # 모델 학습
-        board_state = selected_node.board.fen()  # FEN 문자열로 가져옵니다.
-        board_tensor = fen_to_tensor(board_state)
-
-        # 정책 네트워크에 전달
-        policy, _ = policy_net(board_tensor)  # board_tensor를 직접 사용
-        train_step(policy_net, optimizer, board_state, policy, reward)
-
-        # board를 업데이트
-        board = selected_node.board.copy()  # selected_node의 보드 상태로 업데이트
-        root = selected_node  # 루트 노드를 업데이트하여 다음 사이클에서 사용할 수 있도록 함
-        total_reward += reward
-
-    #print(BEST_REWARD, total_reward)
-
-    if total_reward > BEST_REWARD and total_reward > 0:
-        BEST_REWARD = total_reward
-        model_path = f"model/chess_ai_{BEST_REWARD}.pth"
-        save_model(policy_net, model_path)
-        #print(f"Model saved to {model_path}")
-
-    return total_reward
-
-
-def delete_lower_reward_models(directory):
-    if not os.listdir(directory):
-        return
-
-    os.remove(directory + "chess_ai.pth")
-
-    # 보상이 가장 높은 모델 파일과 그 값을 저장할 변수
-    highest_reward = float('-inf')
-    best_model_file = ""
-
-    # 디렉토리 내의 모든 파일을 확인
-    for filename in os.listdir(directory):
-        # 파일 이름에서 보상 값을 추출
-        match = re.search(r'chess_ai_([-+]?\d*\.\d+|\d+)', filename)
-        if match:
-            reward = float(match.group(1))
-            # 보상이 가장 높은 파일을 찾음
-            if reward > highest_reward:
-                highest_reward = reward
-                best_model_file = filename
-
-    # 가장 높은 보상을 가진 모델 파일을 제외한 나머지 삭제
-    for filename in os.listdir(directory):
-        if filename != best_model_file and filename.startswith("chess_ai_"):
-            os.remove(os.path.join(directory, filename))
-
-    os.rename(os.path.join(directory, best_model_file), os.path.join(directory, "chess_ai.pth"))
 
 
 # 메인 자기 대국 루프
 def main():
-    global BEST_REWARD
-    i = 0
+    policy_net = ChessNet()
+    optimizer = optim.Adam(policy_net.parameters(), lr=0.001)
 
-    while True:
-        BEST_REWARD = float('-inf')
-        delete_lower_reward_models("model/")
+    best_reward = float('-inf')
 
-        num_processes = 4  # 동시에 실행할 프로세스 수
-        episodes = range(100)  # 한번 실행할떄 에피소드 범위
+    for episode in range(100):
+        print(f"Episode {episode}")
+        board = chess.Board()
+        root = TreeNode(board)
+        total_reward = 0
 
-        with multiprocessing.Pool(processes=num_processes) as pool:
-            results = pool.map(run_game, episodes)
+        while not board.is_game_over():
+            selected_node = select(root)
 
-        # for episode, total_reward in zip(episodes, results):
-        #     print(f"Episode {episode} completed with total reward: {total_reward}")
+            if not selected_node.board.is_game_over():
+                selected_node = expand(selected_node, policy_net)
 
-        i+=1
-        print(f"{i}번째 학습 완료")
+            # 시뮬레이션을 통해 보드의 결과를 가져옵니다.
+            reward = simulate(selected_node.board)
+            backpropagate(selected_node, reward)
+
+            # 모델 학습
+            board_state = selected_node.board.fen()  # FEN 문자열로 가져옵니다.
+            board_tensor = fen_to_tensor(board_state)
+
+            # 정책 네트워크에 전달
+            policy, _ = policy_net(board_tensor)  # board_tensor를 직접 사용
+            train_step(policy_net, optimizer, board_state, policy, reward)
+
+            # board를 업데이트
+            board = selected_node.board.copy()  # selected_node의 보드 상태로 업데이트
+            root = selected_node  # 루트 노드를 업데이트하여 다음 사이클에서 사용할 수 있도록 함
+            total_reward += reward
+
+
+        if total_reward > best_reward:
+            best_reward = total_reward
+            save_model(policy_net, path=f"model/chess_ai{episode}.pth")
+            print(f"모델 저장")
+
+        print(f"에피소드 {episode} 보상: {total_reward}")
+        print("--------------------------------------------------------")
+
 
 if __name__ == "__main__":
     main()
