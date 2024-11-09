@@ -7,27 +7,35 @@ pygame.init()
 # 색상 정의
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
-
 BROWN = (181, 136, 99)
 W_BROWN = (237, 214, 178)
 BACKGROUND = (49, 46, 43)
-
 FONT_COLOR = (160, 160, 160)
+HIGHLIGHT_COLOR = (0, 255, 0)  # 가능한 움직임 하이라이트 색상
+CHECK_COLOR = (255, 0, 0)  # 체크 시 색상
+MOVE_DOT_COLOR = (0, 255, 0)  # 이동 가능한 위치 색상
 
 # 기본 체스판 타일 크기 및 윈도우 크기 설정
 LEFT_MARGIN = 20
 BOTTOM_MARGIN = 15
-
 WIDTH, HEIGHT = 700, 700
 TILE_SIZE = WIDTH // 8
-
-# 말 크기 비율 설정
 PIECE_SCALE = 1
+PIECE_SCALE_CAPTURED = 0.3  # 먹힌 기물의 크기 비율
+CAPTURED_AREA_WIDTH = 200  # 오른쪽에 추가된 공간의 폭
+CAPTURED_TILE_SIZE = 50  # 잡힌 기물 타일 크기
 
-screen = pygame.display.set_mode((WIDTH + LEFT_MARGIN, HEIGHT + BOTTOM_MARGIN), pygame.RESIZABLE)
+# 추가된 변수
+captured_pieces = {'white': [], 'black': []}  # 잡힌 기물 저장
+selected_piece = None  # 선택된 기물 위치
+possible_moves = []  # 이동 가능한 위치 목록
+turn = 'white'  # 턴을 추적
+king_positions = {'white': (4, 0), 'black': (4, 7)}  # 각 색의 왕 위치 저장
+
+screen = pygame.display.set_mode((WIDTH + CAPTURED_AREA_WIDTH, HEIGHT + BOTTOM_MARGIN), pygame.RESIZABLE)  # 오른쪽에 공간 추가
 pygame.display.set_caption("Chess Board")
 
-# 폰트 설정 (Ensure the font path is correct)
+# 폰트 설정
 try:
     font = pygame.font.Font('Font/Maplelight.ttf', 15)
 except FileNotFoundError:
@@ -36,24 +44,20 @@ except FileNotFoundError:
 
 CHESS_HORSE_PIXELS = 80
 PIECE_PATH = 'img/pieces.png'
-
 pieces = {}
 
+# 기물 이미지 불러오기 함수
 def load_image():
     global pieces
-
     name = ['k', 'q', 'b', 'n', 'r', 'p']
-
     try:
         img_horse = pygame.image.load(PIECE_PATH)
         img_horse = pygame.transform.scale(img_horse, (CHESS_HORSE_PIXELS * 6, CHESS_HORSE_PIXELS * 2))
-
         for i in range(2):
             for j in range(6):
                 cropped_region = (j * CHESS_HORSE_PIXELS, i * CHESS_HORSE_PIXELS, CHESS_HORSE_PIXELS, CHESS_HORSE_PIXELS)
                 cropped = pygame.Surface((CHESS_HORSE_PIXELS, CHESS_HORSE_PIXELS), pygame.SRCALPHA)
                 cropped.blit(img_horse, (0, 0), cropped_region)
-
                 if i == 0:
                     pieces[name[j]] = cropped  # White pieces as lowercase
                 else:
@@ -63,7 +67,6 @@ def load_image():
         sys.exit()
 
 load_image()
-print(pieces)
 
 # 이미지 크기를 타일 크기보다 작게 조정
 def resize_pieces():
@@ -71,7 +74,13 @@ def resize_pieces():
         new_size = int(TILE_SIZE * PIECE_SCALE)
         pieces[key] = pygame.transform.scale(pieces[key], (new_size, new_size))
 
+def resize_captured_pieces():
+    global captured_pieces
+    for color in captured_pieces:
+        captured_pieces[color] = [pygame.transform.scale(pieces[piece], (int(CAPTURED_TILE_SIZE * PIECE_SCALE_CAPTURED), int(CAPTURED_TILE_SIZE * PIECE_SCALE_CAPTURED))) for piece in captured_pieces[color]]
+
 resize_pieces()
+resize_captured_pieces()
 
 # 체스판 초기화
 board = [
@@ -88,16 +97,13 @@ board = [
 # 체스판 그리기 함수
 def draw_board(screen):
     colors = [W_BROWN, BROWN]
-
     for row in range(8):
         for col in range(8):
             color = colors[(row + col) % 2]
             pygame.draw.rect(screen, color, ((col * TILE_SIZE) + LEFT_MARGIN, (row * TILE_SIZE), TILE_SIZE, TILE_SIZE))
-
     for i in range(8):
         col_text = font.render(chr(ord('A') + i), True, FONT_COLOR)
         screen.blit(col_text, ((i * TILE_SIZE) + LEFT_MARGIN + TILE_SIZE // 2 - col_text.get_width() // 2, WIDTH - 3))
-
         row_text = font.render(str(8 - i), True, FONT_COLOR)
         screen.blit(row_text, (LEFT_MARGIN // 2 - row_text.get_width() // 2, i * TILE_SIZE + TILE_SIZE // 2 - row_text.get_height() // 2))
 
@@ -110,68 +116,161 @@ def draw_pieces(screen):
                 offset = (TILE_SIZE - new_size) // 2
                 screen.blit(pieces[piece], (col * TILE_SIZE + LEFT_MARGIN + offset, row * TILE_SIZE + offset))
 
-# 현재 드래그 중인 말 정보
-dragging_piece = None
-dragging_pos = (0, 0)
-start_pos = (0, 0)
+def draw_highlight(screen, selected_piece, possible_moves, check_color=None):
+    if selected_piece:
+        x, y = selected_piece
+        pygame.draw.rect(screen, HIGHLIGHT_COLOR, (x * TILE_SIZE + LEFT_MARGIN, y * TILE_SIZE, TILE_SIZE, TILE_SIZE), 3)
+    for move in possible_moves:
+        mx, my = move
+        pygame.draw.circle(screen, MOVE_DOT_COLOR, (mx * TILE_SIZE + LEFT_MARGIN + TILE_SIZE // 2, my * TILE_SIZE + TILE_SIZE // 2), 5)
+    if check_color:  # Highlight the king's position if in check
+        king_x, king_y = king_positions[turn]
+        pygame.draw.rect(screen, check_color, (king_x * TILE_SIZE + LEFT_MARGIN, king_y * TILE_SIZE, TILE_SIZE, TILE_SIZE), 3)
 
-# 메인 루프
-def main():
-    global TILE_SIZE, screen, dragging_piece, dragging_pos, start_pos
-
-    while True:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pygame.quit()
-                sys.exit()
-
-            elif event.type == pygame.MOUSEBUTTONDOWN:
-                x, y = event.pos
-                col = (x - LEFT_MARGIN) // TILE_SIZE
-                row = y // TILE_SIZE
-
-                if 0 <= col < 8 and 0 <= row < 8:
-                    dragging_piece = board[row][col]
-                    if dragging_piece:
-                        dragging_pos = (x - LEFT_MARGIN, y)
-                        start_pos = (row, col)
-                        board[row][col] = ''  # 원래 위치를 비웁니다.
-
-            elif event.type == pygame.MOUSEBUTTONUP:
-                if dragging_piece:
-                    x, y = event.pos
-                    col = (x - LEFT_MARGIN) // TILE_SIZE
-                    row = y // TILE_SIZE
-
-                    if 0 <= col < 8 and 0 <= row < 8:
-                        board[row][col] = dragging_piece
+def get_possible_moves(x, y, piece):
+    moves = []
+    
+    if piece.lower() == 'r':  # Rook
+        for dx, dy in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
+            nx, ny = x, y
+            while True:
+                nx += dx
+                ny += dy
+                if 0 <= nx < 8 and 0 <= ny < 8:
+                    if board[ny][nx] == '':
+                        moves.append((nx, ny))
+                    elif (board[ny][nx].islower() and piece.isupper()) or (board[ny][nx].isupper() and piece.islower()):
+                        moves.append((nx, ny))
+                        break
                     else:
-                        # 범위를 벗어나면 원래 위치로 되돌립니다.
-                        board[start_pos[0]][start_pos[1]] = dragging_piece
+                        break
+                else:
+                    break
 
-                    dragging_piece = None
+    elif piece.lower() == 'n':  # Knight
+        for dx, dy in [(2, 1), (2, -1), (-2, 1), (-2, -1), (1, 2), (1, -2), (-1, 2), (-1, -2)]:
+            nx, ny = x + dx, y + dy
+            if 0 <= nx < 8 and 0 <= ny < 8:
+                if board[ny][nx] == '' or (board[ny][nx].islower() and piece.isupper()) or (board[ny][nx].isupper() and piece.islower()):
+                    moves.append((nx, ny))
 
-            elif event.type == pygame.MOUSEMOTION and dragging_piece:
-                dragging_pos = event.pos
+    elif piece.lower() == 'b':  # Bishop
+        for dx, dy in [(1, 1), (1, -1), (-1, 1), (-1, -1)]:
+            nx, ny = x, y
+            while True:
+                nx += dx
+                ny += dy
+                if 0 <= nx < 8 and 0 <= ny < 8:
+                    if board[ny][nx] == '':
+                        moves.append((nx, ny))
+                    elif (board[ny][nx].islower() and piece.isupper()) or (board[ny][nx].isupper() and piece.islower()):
+                        moves.append((nx, ny))
+                        break
+                    else:
+                        break
+                else:
+                    break
 
-            elif event.type == pygame.VIDEORESIZE:
-                WIDTH, HEIGHT = event.w, event.h
-                TILE_SIZE = min(WIDTH, HEIGHT) // 10  # Adjust to keep tiles square
-                screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
-                
-                # 윈도우 크기에 맞게 말 크기 조정
-                resize_pieces()
+    elif piece.lower() == 'q':  # Queen
+        for dx, dy in [(1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1)]:
+            nx, ny = x, y
+            while True:
+                nx += dx
+                ny += dy
+                if 0 <= nx < 8 and 0 <= ny < 8:
+                    if board[ny][nx] == '':
+                        moves.append((nx, ny))
+                    elif (board[ny][nx].islower() and piece.isupper()) or (board[ny][nx].isupper() and piece.islower()):
+                        moves.append((nx, ny))
+                        break
+                    else:
+                        break
+                else:
+                    break
 
-        screen.fill(BACKGROUND)
-        draw_board(screen)
-        draw_pieces(screen)
+    elif piece.lower() == 'k':  # King
+        for dx, dy in [(1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1)]:
+            nx, ny = x + dx, y + dy
+            if 0 <= nx < 8 and 0 <= ny < 8:
+                if board[ny][nx] == '' or (board[ny][nx].islower() and piece.isupper()) or (board[ny][nx].isupper() and piece.islower()):
+                    moves.append((nx, ny))
+    
+    elif piece.lower() == 'p':  # Pawn
+        direction = -1 if piece.isupper() else 1
+        start_row = 6 if piece.isupper() else 1
+        if 0 <= y + direction < 8:
+            if board[y + direction][x] == '':
+                moves.append((x, y + direction))
+                if y == start_row and board[y + 2 * direction][x] == '':
+                    moves.append((x, y + 2 * direction))
+        if 0 <= x + 1 < 8 and 0 <= y + direction < 8 and board[y + direction][x + 1] != '' and board[y + direction][x + 1].islower() != piece.islower():
+            moves.append((x + 1, y + direction))
+        if 0 <= x - 1 < 8 and 0 <= y + direction < 8 and board[y + direction][x - 1] != '' and board[y + direction][x - 1].islower() != piece.islower():
+            moves.append((x - 1, y + direction))
 
-        if dragging_piece:
-            new_size = int(TILE_SIZE * PIECE_SCALE)
-            screen.blit(pieces[dragging_piece], (dragging_pos[0] - new_size // 2, dragging_pos[1] - new_size // 2))
+    return moves
 
-        # 화면 업데이트
-        pygame.display.flip()
+def is_in_check(color):
+    king_x, king_y = king_positions[color]
+    for row in range(8):
+        for col in range(8):
+            piece = board[row][col]
+            if piece != '' and ((piece.islower() and color == 'white') or (piece.isupper() and color == 'black')):
+                moves = get_possible_moves(col, row, piece)
+                if (king_x, king_y) in moves:
+                    return True
+    return False
 
-if __name__ == "__main__":
-    main()
+# 게임 루프
+while True:
+    screen.fill(BACKGROUND)
+    draw_board(screen)
+    draw_pieces(screen)
+
+    # 체크 여부 확인
+    if is_in_check(turn):
+        draw_highlight(screen, None, [], CHECK_COLOR)
+    else:
+        draw_highlight(screen, selected_piece, possible_moves)
+
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            pygame.quit()
+            sys.exit()
+        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:  # 왼쪽 클릭
+            mouse_x, mouse_y = event.pos
+            # 클릭한 타일 계산
+            col = (mouse_x - LEFT_MARGIN) // TILE_SIZE
+            row = mouse_y // TILE_SIZE
+
+            if 0 <= col < 8 and 0 <= row < 8:
+                piece = board[row][col]
+                if selected_piece is None:  # 기물 선택
+                    if (piece.islower() and turn == 'white') or (piece.isupper() and turn == 'black'):
+                        selected_piece = (col, row)
+                        possible_moves = get_possible_moves(col, row, piece)
+                else:  # 기물 이동
+                    if (col, row) in possible_moves:
+                        captured_piece = board[row][col]
+                        if captured_piece:  # 기물 잡기
+                            captured_pieces['black' if captured_piece.islower() else 'white'].append(captured_piece)
+                        board[row][col] = piece
+                        board[selected_piece[1]][selected_piece[0]] = ''  # 이전 위치 비우기
+                        # 왕의 위치 업데이트
+                        if piece.lower() == 'k':
+                            king_positions[turn] = (col, row)
+                        selected_piece = None
+                        possible_moves = []
+                        # 턴 변경
+                        turn = 'black' if turn == 'white' else 'white'
+                    else:
+                        selected_piece = None
+                        possible_moves = []
+
+    # 잡힌 기물 그리기
+    for idx, piece in enumerate(captured_pieces['white']):
+        screen.blit(piece, (WIDTH + 20, idx * CAPTURED_TILE_SIZE))
+    for idx, piece in enumerate(captured_pieces['black']):
+        screen.blit(piece, (WIDTH + 20, (idx + 1) * CAPTURED_TILE_SIZE))
+
+    pygame.display.flip()
