@@ -8,13 +8,24 @@ from math import sqrt, log
 import os
 import multiprocessing
 import re
+import sys
 
+
+# GPU 사용 가능 여부 확인 및 강제 지정
+if not torch.cuda.is_available():
+    print("GPU를 찾을 수 없습니다. 이 프로그램은 GPU가 필요합니다.")
+    sys.exit(1)
+
+device = torch.device("cuda")
+print(f"Using GPU: {torch.cuda.get_device_name(0)}")
+
+# CUDA 메모리 캐시 초기화
+torch.cuda.empty_cache()
+
+# 멀티프로세싱에서 CUDA 초기화 설정
+torch.multiprocessing.set_start_method('spawn', force=True)
 
 BEST_REWARD = float("-inf")
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(device)
-
-
 
 # 체스 정책 및 가치 네트워크 정의
 class ChessNet(nn.Module):
@@ -22,17 +33,20 @@ class ChessNet(nn.Module):
         super(ChessNet, self).__init__()
         self.fc1 = nn.Linear(64, 128)
         self.fc2 = nn.Linear(128, 64)
-        self.policy_head = nn.Linear(64, 64)  # 정책 헤드 (수 선택)
-        self.value_head = nn.Linear(64, 1)    # 가치 헤드 (보드 평가)
+        self.policy_head = nn.Linear(64, 64)  
+        self.value_head = nn.Linear(64, 1)    
+
+        # 모든 레이어를 GPU로 이동
+        self.to(device)
 
     def forward(self, x):
         x = torch.relu(self.fc1(x))
         x = torch.relu(self.fc2(x))
         policy = self.policy_head(x)
-        value = torch.tanh(self.value_head(x))  # 가치 평가는 -1 ~ 1로 제한
+        value = torch.tanh(self.value_head(x))
         return policy, value
 
-# 트리 노드 클래스 정의
+# 트리 노드 클래스 정의는 그대로 유지
 class TreeNode:
     def __init__(self, board, parent=None, prior_prob=1.0):
         self.board = board.copy()
@@ -59,18 +73,17 @@ def fen_to_tensor(fen):
     board = chess.Board(fen)
     board_array = []
     
-    # 각 칸을 숫자로 변환 (빈 칸은 0, 백색 기물은 1~6, 흑색 기물은 -1~-6)
     for square in chess.SQUARES:
         piece = board.piece_at(square)
-
         if piece is None:
             board_array.append(0)
         else:
             board_array.append(piece.piece_type if piece.color == chess.WHITE else -piece.piece_type)
     
-    return torch.tensor(board_array, dtype=torch.float32)
+    # GPU로 즉시 이동
+    return torch.tensor(board_array, dtype=torch.float32, device=device)
 
-# MCTS의 선택, 확장, 시뮬레이션, 역전파 단계 정의
+# MCTS 함수들
 def select(node):
     while not node.board.is_game_over() and node.is_fully_expanded():
         node = node.best_child()
@@ -82,9 +95,10 @@ def expand(node, policy_net):
     new_board = node.board.copy()
     new_board.push(move)
     
-    board_tensor = fen_to_tensor(new_board.board_fen()).to(device)
-
-    policy, _ = policy_net(board_tensor)
+    board_tensor = fen_to_tensor(new_board.board_fen())
+    
+    with torch.cuda.amp.autocast():  # GPU 연산 최적화
+        policy, _ = policy_net(board_tensor)
     policy = torch.softmax(policy, dim=0)
 
     move_index = legal_moves.index(move)
@@ -102,51 +116,51 @@ def simulate(board):
         sim_board.push(move)
 
     result = sim_board.result()
-
-    if result == '1-0':
-        return 1
-    elif result == '0-1':
-        return -1
-    
-    return 0
+    return 1 if result == '1-0' else (-1 if result == '0-1' else 0)
 
 def backpropagate(node, result):
     while node is not None:
         node.visits += 1
         node.wins += result
-        result = -result  # 상대 입장에서의 결과
+        result = -result
         node = node.parent
 
-# 모델 학습 단계 정의
 def train_step(policy_net, optimizer, board_state, policy, reward):
-    board_tensor = fen_to_tensor(board_state).to(device)
+    board_tensor = fen_to_tensor(board_state)
+    reward_tensor = torch.tensor([reward], dtype=torch.float32, device=device)
 
-    pred_policy, pred_value = policy_net(board_tensor)
-    value_loss = nn.MSELoss()(pred_value, torch.tensor([reward]).float().to(device))
-    policy_loss = -(policy * pred_policy.log()).mean()
-    loss = value_loss + policy_loss
+    with torch.cuda.amp.autocast():  # GPU 연산 최적화
+        pred_policy, pred_value = policy_net(board_tensor)
+        value_loss = nn.MSELoss()(pred_value, reward_tensor)
+        policy_loss = -(policy * pred_policy.log()).mean()
+        loss = value_loss + policy_loss
 
     optimizer.zero_grad()
     loss.backward()
     optimizer.step()
 
-# 모델 저장 및 로드 함수
 def save_model(model, path="chess_ai.pth"):
     torch.save(model.state_dict(), path)
 
 def load_model(model, path="chess_ai.pth"):
     if os.path.exists(path):
-        model.load_state_dict(torch.load(path))
+        model.load_state_dict(torch.load(path, map_location=device))
 
-# 게임 실행 함수
 def run_game(i):
     global BEST_REWARD
-
-    policy_net = ChessNet().to(device)  # 각 프로세스에서 별도의 모델 인스턴스 생성
-    optimizer = optim.Adam(policy_net.parameters(), lr=0.001)
-    load_model(policy_net, "chess_ai.pth")
     
-    #print(f"Running episode {episode}")
+    # GPU 메모리 캐시 초기화
+    torch.cuda.empty_cache()
+
+    policy_net = ChessNet()  # 이미 __init__에서 GPU로 이동됨
+    optimizer = optim.Adam(policy_net.parameters(), lr=0.001)
+    
+    try:
+        load_model(policy_net, "model/chess_ai.pth")
+    except Exception as e:
+        print(f"모델 로드 중 오류 발생: {e}")
+        return 0
+    
     board = chess.Board()
     root = TreeNode(board)
     total_reward = 0
@@ -157,83 +171,88 @@ def run_game(i):
         if not selected_node.board.is_game_over():
             selected_node = expand(selected_node, policy_net)
 
-        # 시뮬레이션을 통해 보드의 결과를 가져옵니다.
         reward = simulate(selected_node.board)
         backpropagate(selected_node, reward)
 
-        # 모델 학습
-        board_state = selected_node.board.fen()  # FEN 문자열로 가져옵니다.
+        board_state = selected_node.board.fen()
         board_tensor = fen_to_tensor(board_state)
 
-        # 정책 네트워크에 전달
-        policy, _ = policy_net(board_tensor)  # board_tensor를 직접 사용
+        with torch.cuda.amp.autocast():  # GPU 연산 최적화
+            policy, _ = policy_net(board_tensor)
         train_step(policy_net, optimizer, board_state, policy, reward)
 
-        # board를 업데이트
-        board = selected_node.board.copy()  # selected_node의 보드 상태로 업데이트
-        root = selected_node  # 루트 노드를 업데이트하여 다음 사이클에서 사용할 수 있도록 함
+        board = selected_node.board.copy()
+        root = selected_node
         total_reward += reward
-
-    #print(BEST_REWARD, total_reward)
 
     if total_reward > BEST_REWARD and total_reward > 0:
         BEST_REWARD = total_reward
         model_path = f"model/chess_ai_{BEST_REWARD}.pth"
         save_model(policy_net, model_path)
-        #print(f"Model saved to {model_path}")
+
+    # 메모리 정리
+    del policy_net
+    del optimizer
+    torch.cuda.empty_cache()
 
     return total_reward
 
-
 def delete_lower_reward_models(directory):
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+        return
+        
     if not os.listdir(directory):
         return
 
-    os.remove(directory + "chess_ai.pth")
+    if os.path.isfile(directory + "chess_ai.pth"):
+        os.remove(directory + "chess_ai.pth")
 
-    # 보상이 가장 높은 모델 파일과 그 값을 저장할 변수
     highest_reward = float('-inf')
     best_model_file = ""
 
-    # 디렉토리 내의 모든 파일을 확인
     for filename in os.listdir(directory):
-        # 파일 이름에서 보상 값을 추출
         match = re.search(r'chess_ai_([-+]?\d*\.\d+|\d+)', filename)
         if match:
             reward = float(match.group(1))
-            # 보상이 가장 높은 파일을 찾음
             if reward > highest_reward:
                 highest_reward = reward
                 best_model_file = filename
 
-    # 가장 높은 보상을 가진 모델 파일을 제외한 나머지 삭제
-    for filename in os.listdir(directory):
-        if filename != best_model_file and filename.startswith("chess_ai_"):
-            os.remove(os.path.join(directory, filename))
+    if best_model_file:  # best_model_file이 존재할 때만 처리
+        for filename in os.listdir(directory):
+            if filename != best_model_file and filename.startswith("chess_ai_"):
+                os.remove(os.path.join(directory, filename))
 
-    os.rename(os.path.join(directory, best_model_file), os.path.join(directory, "chess_ai.pth"))
+        os.rename(os.path.join(directory, best_model_file), os.path.join(directory, "chess_ai.pth"))
 
-
-# 메인 자기 대국 루프
 def main():
     global BEST_REWARD
     i = 0
+
+    # GPU 초기화 상태 출력
+    print(f"GPU 메모리 상태:")
+    print(f"할당된 메모리: {torch.cuda.memory_allocated()/1024**2:.2f} MB")
+    print(f"캐시된 메모리: {torch.cuda.memory_reserved()/1024**2:.2f} MB")
 
     while True:
         BEST_REWARD = float('-inf')
         delete_lower_reward_models("model/")
 
-        num_processes = 4  # 동시에 실행할 프로세스 수
-        episodes = range(100)  # 한번 실행할떄 에피소드 범위
+        num_processes = min(20, torch.cuda.device_count() * 4)  # GPU 개수에 따라 프로세스 수 조정
+        episodes = range(100)
 
         with multiprocessing.Pool(processes=num_processes) as pool:
             results = pool.map(run_game, episodes)
 
-        # for episode, total_reward in zip(episodes, results):
-        #     print(f"Episode {episode} completed with total reward: {total_reward}")
+        # GPU 메모리 정리
+        torch.cuda.empty_cache()
 
-        i+=1
+        i += 1
         print(f"{i}번째 학습 완료")
+        print(f"GPU 메모리 상태:")
+        print(f"할당된 메모리: {torch.cuda.memory_allocated()/1024**2:.2f} MB")
+        print(f"캐시된 메모리: {torch.cuda.memory_reserved()/1024**2:.2f} MB")
 
 if __name__ == "__main__":
     main()
