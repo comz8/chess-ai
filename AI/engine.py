@@ -1,22 +1,18 @@
-import chess
-import chess.engine
-import random
 import torch
 import torch.nn as nn
-import torch.optim as optim
-import numpy as np
-from math import sqrt, log
+import random
+import chess
 import os
+from math import sqrt, log
 
 
-# 체스 정책 및 가치 네트워크 정의
 class ChessNet(nn.Module):
     def __init__(self):
         super(ChessNet, self).__init__()
-        self.fc1 = nn.Linear(64, 128)
-        self.fc2 = nn.Linear(128, 64)
-        self.policy_head = nn.Linear(64, 64)  # 정책 헤드 (수 선택)
-        self.value_head = nn.Linear(64, 1)    # 가치 헤드 (보드 평가)
+        self.fc1 = nn.Linear(64, 256)
+        self.fc2 = nn.Linear(256, 128)
+        self.policy_head = nn.Linear(128, 64)
+        self.value_head = nn.Linear(128, 1)
 
     def forward(self, x):
         x = torch.relu(self.fc1(x))
@@ -25,7 +21,7 @@ class ChessNet(nn.Module):
         value = torch.tanh(self.value_head(x))  # 가치 평가는 -1 ~ 1로 제한
         return policy, value
 
-# 트리 노드 클래스 정의
+
 class TreeNode:
     def __init__(self, board, parent=None, prior_prob=1.0):
         self.board = board.copy()
@@ -112,8 +108,6 @@ def backpropagate(node, result):
         result = -result  # 상대 입장에서의 결과
         node = node.parent
 
-
-
 # 모델 학습 단계 정의
 def train_step(policy_net, optimizer, board_state, policy, reward):
     board_tensor = fen_to_tensor(board_state)
@@ -127,58 +121,6 @@ def train_step(policy_net, optimizer, board_state, policy, reward):
     loss.backward()
     optimizer.step()
 
-
 def load_model(model, path="chess_ai.pth"):
     if os.path.exists(path):
-        model.load_state_dict(torch.load(path, map_location=torch.device('cpu')))
-
-
-
-# 메인 자기 대국 루프
-def main():
-    policy_net = ChessNet()
-    optimizer = optim.Adam(policy_net.parameters(), lr=0.001)
-
-    best_reward = float('-inf')
-
-    for episode in range(100):
-        print(f"Episode {episode}")
-        board = chess.Board()
-        root = TreeNode(board)
-        total_reward = 0
-
-        while not board.is_game_over():
-            selected_node = select(root)
-
-            if not selected_node.board.is_game_over():
-                selected_node = expand(selected_node, policy_net)
-
-            # 시뮬레이션을 통해 보드의 결과를 가져옵니다.
-            reward = simulate(selected_node.board)
-            backpropagate(selected_node, reward)
-
-            # 모델 학습
-            board_state = selected_node.board.fen()  # FEN 문자열로 가져옵니다.
-            board_tensor = fen_to_tensor(board_state)
-
-            # 정책 네트워크에 전달
-            policy, _ = policy_net(board_tensor)  # board_tensor를 직접 사용
-            train_step(policy_net, optimizer, board_state, policy, reward)
-
-            # board를 업데이트
-            board = selected_node.board.copy()  # selected_node의 보드 상태로 업데이트
-            root = selected_node  # 루트 노드를 업데이트하여 다음 사이클에서 사용할 수 있도록 함
-            total_reward += reward
-
-
-        if total_reward > best_reward:
-            best_reward = total_reward
-            save_model(policy_net, path=f"model/chess_ai{episode}.pth")
-            print(f"모델 저장")
-
-        print(f"에피소드 {episode} 보상: {total_reward}")
-        print("--------------------------------------------------------")
-
-
-if __name__ == "__main__":
-    main()
+        model.load_state_dict(torch.load(path, map_location=torch.device('cpu'), weights_only=True))
