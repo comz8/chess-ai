@@ -61,7 +61,7 @@ def fen_to_tensor(fen):
     return torch.tensor(board_array, dtype=torch.float32)
 
 
-# MCTS의 선택, 확장, 시뮬레이션, 역전파 단계 정의
+
 def select(node):
     while not node.board.is_game_over() and node.is_fully_expanded():
         node = node.best_child()
@@ -105,10 +105,10 @@ def backpropagate(node, result):
     while node is not None:
         node.visits += 1
         node.wins += result
-        result = -result  # 상대 입장에서의 결과
+        result = -result
         node = node.parent
 
-# 모델 학습 단계 정의
+
 def train_step(policy_net, optimizer, board_state, policy, reward):
     board_tensor = fen_to_tensor(board_state)
 
